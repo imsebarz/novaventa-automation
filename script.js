@@ -266,7 +266,7 @@ async function outputSummary(successfulProducts, errorProducts) {
       `${successfulProducts.length} products successfully added to the cart:`
     );
     successfulProducts.forEach(product => {
-      logger.info(`- Code: ${product.code}, Quantity: ${product.quantity}`);
+      logger.info(`- Code: ${product.code}, Quantity: ${product.quantity}, Name: ${product.name}`);
     });
   } else {
     logger.info('No products were successfully added to the cart.');
