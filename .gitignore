@@ -1,4 +1,7 @@
 /node_modules
 /screenshots
+.browser-profile
 .env
 
+
+.browser-profile-office
