@@ -1,5 +1,7 @@
 /node_modules
 /screenshots
+/logs
+inspect-output.json
 .browser-profile
 .env
 
