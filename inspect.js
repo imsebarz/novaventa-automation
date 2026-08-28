@@ -93,14 +93,85 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       }
       return cards;
     });
+    report.search.exactMatchDebug = await page.evaluate(searchedCode => {
+      const cards = [...document.querySelectorAll('[class*="product-item-card"]')];
+      const exactCl = new RegExp(`^CL:\\s*${searchedCode}(?!\\d)`, 'i');
+      const rows = cards.map((card, index) => ({
+        index,
+        clTexts: [...card.querySelectorAll('[class*="__cl"], label')]
+          .map(node => (node.textContent || '').trim())
+          .filter(text => /^CL:/i.test(text)),
+      }));
+      return {
+        cardCount: cards.length,
+        regexSource: exactCl.source,
+        match: rows.find(row => row.clTexts.some(text => exactCl.test(text))) || null,
+        firstRows: rows.slice(0, 5),
+      };
+    }, sampleCode);
 
-    // Try to open the cart by looking for header/cart buttons.
-    const cartButton = await page.evaluate(() => {
-      const candidates = [...document.querySelectorAll('button, a, [role="button"]')];
-      const button = candidates.find(element =>
-        /carrito|pedido|total pedido/i.test((element.textContent || '') + ' ' + (element.getAttribute('aria-label') || ''))
+    // Variant products expose "Elegir tono" in the listing and only become
+    // addable on the PDP. Inspect that route without clicking Agregar.
+    report.variant = await page.evaluate(searchedCode => {
+      const cards = [...document.querySelectorAll('[class*="product-item-card"]')];
+      const card = cards.find(element => element.innerText?.includes(`CL: ${searchedCode}`));
+      const action = [...(card?.querySelectorAll('button') || [])].find(button =>
+        /^\s*Elegir\s+(tono|color|talla|opci[oó]n)\s*$/i.test(button.textContent || '')
       );
-      if (button) {
+      const link = card?.querySelector('a[href*="/p"]');
+      return action && link
+        ? { action: (action.textContent || '').trim(), href: link.getAttribute('href') || '' }
+        : null;
+    }, sampleCode);
+
+    if (report.variant?.href) {
+      const variantUrl = new URL(report.variant.href, officeUrl).toString();
+      console.log(`Opening variant PDP ${variantUrl}`);
+      await page.goto(variantUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await sleep(8000);
+      report.variant.pdp = await dumpPage(page, `variant-pdp:${sampleCode}`);
+      report.variant.pdpState = await page.evaluate(searchedCode => {
+        const isVisible = element => {
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const buttons = [...document.querySelectorAll('button')]
+          .filter(isVisible)
+          .map(button => ({
+            text: (button.innerText || button.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
+            disabled: button.disabled,
+            className: button.className?.toString() || '',
+            selectedAlt: button.querySelector('img[alt]')?.getAttribute('alt') || '',
+          }));
+        const selectedOptions = buttons.filter(button => /option--selected/.test(button.className));
+        const inputs = [...document.querySelectorAll('input')]
+          .filter(isVisible)
+          .map(input => ({
+            type: input.type,
+            value: input.value,
+            disabled: input.disabled,
+            testid: input.getAttribute('data-testid') || '',
+          }));
+        return {
+          url: location.href,
+          exactCodeVisible: new RegExp(`CL:\\s*${searchedCode}\\b`).test(document.body?.innerText || ''),
+          buttons,
+          selectedOptions,
+          inputs,
+        };
+      }, sampleCode);
+    }
+
+    // Open the real cart badge. Generic text matching can hit the
+    // "OFICINA VIRTUAL / PEDIDO CICLO" navigation tab instead.
+    const cartButton = await page.evaluate(() => {
+      const badge = document.querySelector('[data-testid="carrito-badge"]');
+      if (badge) {
+        const button =
+          badge.closest('button, a, [role="button"]') ||
+          badge.querySelector('button, a, [role="button"]') ||
+          badge;
         button.scrollIntoView({ block: 'center' });
         button.click();
         return {
@@ -115,6 +186,20 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await sleep(4000);
 
     report.cart = await dumpPage(page, 'cart');
+    report.cart.drawerHtml = await page.evaluate(() => {
+      const candidates = [
+        '[class*="carrito-popover"]',
+        '[class*="carrito-container"]',
+        '[role="dialog"]',
+      ];
+      for (const selector of candidates) {
+        for (const element of document.querySelectorAll(selector)) {
+          const rect = element.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) return element.outerHTML.slice(0, 100000);
+        }
+      }
+      return '';
+    });
     report.cart.cartItems = await page.evaluate(() => {
       const candidates = [
         'div[class*="carrito"] *',
@@ -137,6 +222,25 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
         }
       }
       return found;
+    });
+    report.cart.lines = await page.evaluate(() => {
+      const isVisible = element => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      return [...document.querySelectorAll('article[class*="producto-carrito-layout_producto"]')]
+        .filter(isVisible)
+        .map(article => {
+          const clText = article.querySelector('[class*="producto-carrito-info_detalle__cl"]')?.textContent || '';
+          const code = clText.match(/CL:\s*(\d+)/i)?.[1] || '';
+          const input = article.querySelector('input[data-testid="numeric-up-down-input"], input[type="number"]');
+          return {
+            code,
+            quantity: Number(input?.value || 0),
+            name: article.querySelector('[class*="descripcion"]')?.textContent?.trim().replace(/\s+/g, ' ') || '',
+          };
+        })
+        .filter(line => line.code);
     });
 
     fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));

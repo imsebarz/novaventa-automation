@@ -1,14 +1,23 @@
 {
   "name": "novaventa-automation",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Codex skill and deterministic browser runner for preparing a Novaventa cart.",
+  "private": true,
+  "main": "script.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node .agents/skills/prepare-novaventa-order/scripts/run.mjs",
+    "inspect": "node inspect.js",
+    "skill:check": "node .agents/skills/prepare-novaventa-order/scripts/run.mjs --dry-run",
+    "skill:login-check": "node .agents/skills/prepare-novaventa-order/scripts/run.mjs --login-only",
+    "skill:run": "node .agents/skills/prepare-novaventa-order/scripts/run.mjs",
+    "test": "npm run skill:check"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "dotenv": "^16.4.5",
     "puppeteer": "^23.4.0",

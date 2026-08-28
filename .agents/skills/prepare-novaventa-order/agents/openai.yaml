@@ -1,0 +1,6 @@
+interface:
+  display_name: "Preparar pedido Novaventa"
+  short_description: "Arma el carrito de Novaventa por código"
+  default_prompt: "Usa $prepare-novaventa-order para reemplazar el carrito de Oficina Virtual con los productos de products.json, sin enviar el pedido."
+policy:
+  allow_implicit_invocation: false
